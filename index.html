@@ -24,7 +24,6 @@
         .header h1 { font-size: 28px; color: #333; margin-bottom: 10px; }
         .header .date { color: #666; font-size: 16px; }
         
-        /* 激励系统样式 */
         .stats {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -69,7 +68,6 @@
             font-style: italic;
         }
         
-        /* 原有样式 */
         .progress {
             background: #f0f0f0;
             border-radius: 10px;
@@ -161,7 +159,6 @@
         }
         .last-update { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }
         
-        /* 历史记录 */
         .history-section { margin-top: 25px; }
         .history-section h3 { font-size: 16px; color: #333; margin-bottom: 10px; }
         .history-list {
@@ -236,7 +233,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script>
-        // Firebase配置
         const firebaseConfig = {
             apiKey: "AIzaSyC0INycOgw15McsZysYUTaCl5qZ-qGXujE",
             authDomain: "eyedrop-reminder.firebaseapp.com",
@@ -247,13 +243,12 @@
             appId: "1:1079761104680:web:9b1383f330087dd581aa1d"
         };
         
-        // 初始化Firebase
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
         const dataRef = database.ref('eyedropData');
         
-        // 本地数据缓存
         let localData = null;
+        
         const baseTasks = [
             { time: "08:00", medicine: "小牛血去蛋白提取物滴眼液" },
             { time: "08:30", medicine: "环孢素滴眼液（早上）" },
@@ -285,7 +280,6 @@
             { id: "master", name: "眼药水大师", unlocked: false }
         ];
         
-        // 从Firebase加载数据
         function loadData(callback) {
             dataRef.once('value', (snapshot) => {
                 const data = snapshot.val();
@@ -293,13 +287,11 @@
                     localData = data;
                     if (callback) callback(data);
                 } else {
-                    // 如果没有数据，创建初始数据
                     createInitialData();
                 }
             });
         }
         
-        // 创建初始数据
         function createInitialData() {
             const today = getTodayDateString();
             const initialData = {
@@ -317,7 +309,6 @@
             saveData(initialData);
         }
         
-        // 保存数据到Firebase
         function saveData(data) {
             localData = data;
             data.lastUpdate = new Date().toISOString();
@@ -518,25 +509,20 @@
         
         function delay(index, minutes) {
             loadData(function(data) {
-                // 如果第一次延迟，设置标志
                 if (!data.tasks[index].delayed) {
                     data.tasks[index].delayed = true;
                     data.tasks[index].delayMinutes = minutes;
                 } else {
-                    // 多次延迟，累加延迟时间
                     data.tasks[index].delayMinutes += minutes;
                 }
                 
-                // 计算新的延迟时间（累加方式）
                 const baseTime = new Date(`2026-04-15T${data.tasks[index].time}:00`);
                 baseTime.setMinutes(baseTime.getMinutes() + data.tasks[index].delayMinutes);
                 data.tasks[index].newTime = baseTime.toTimeString().slice(0, 5);
                 
-                // 顺延后续所有未完成的任务
                 for (let i = index + 1; i < data.tasks.length; i++) {
                     if (!data.tasks[i].completed) {
                         const taskBaseTime = new Date(`2026-04-15T${data.tasks[i].time}:00`);
-                        // 后续任务也延迟相同的累计时间
                         taskBaseTime.setMinutes(taskBaseTime.getMinutes() + data.tasks[index].delayMinutes);
                         data.tasks[i].newTime = taskBaseTime.toTimeString().slice(0, 5);
                         data.tasks[i].delayed = true;
@@ -553,7 +539,6 @@
         showCurrentDate();
         renderTasks();
         
-        // 实时监听数据变化
         dataRef.on('value', (snapshot) => {
             const data = snapshot.val();
             if (data && JSON.stringify(data) !== JSON.stringify(localData)) {
