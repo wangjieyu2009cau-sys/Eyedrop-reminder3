@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>眼药水提醒（Firebase同步版）</title>
+    <title>眼药水提醒（修复版）</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -24,21 +24,16 @@
         .header h1 { font-size: 28px; color: #333; margin-bottom: 10px; }
         .header .date { color: #666; font-size: 16px; }
 
-        /* 调试信息 */
-        .debug-info {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 10px;
-            padding: 10px;
+        /* 同步状态 */
+        .sync-status {
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 15px;
             margin-bottom: 20px;
-            font-size: 12px;
-            display: none;
+            border-radius: 0 10px 10px 0;
+            font-size: 14px;
+            color: #004085;
         }
-        .debug-info.show { display: block; }
-        .debug-info h4 { color: #856404; margin-bottom: 5px; }
-        .debug-item { margin-bottom: 5px; }
-        .debug-success { color: #28a745; }
-        .debug-error { color: #dc3545; }
 
         /* 激励系统样式 */
         .stats {
@@ -206,15 +201,12 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>💧 眼药水提醒（Firebase同步版）</h1>
+            <h1>💧 眼药水提醒（修复版）</h1>
             <div class="date" id="currentDate"></div>
         </div>
 
-        <div class="debug-info" id="debugInfo">
-            <h4>🔧 调试信息</h4>
-            <div class="debug-item" id="debugInit">Firebase初始化：等待中...</div>
-            <div class="debug-item" id="debugLoad">数据加载：等待中...</div>
-            <div class="debug-item" id="debugData">数据状态：无数据</div>
+        <div class="sync-status" id="syncStatus">
+            🔄 正在连接云端同步...
         </div>
 
         <div id="loadingDiv" class="loading">
@@ -273,22 +265,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script>
-        // 显示调试信息
-        const debugMode = true;
-
-        function setDebug(elementId, message, isSuccess = true) {
-            const element = document.getElementById(elementId);
-            if (element) {
-                element.innerHTML = message + (isSuccess ? '' : ' ❌');
-                element.className = 'debug-item ' + (isSuccess ? 'debug-success' : 'debug-error');
-            }
-            if (debugMode) {
-                console.log(message);
-            }
-        }
-
-        showDebug();
-
         // Firebase配置
         const firebaseConfig = {
             apiKey: "AIzaSyC0INycOgw15McsZysYUTaCl5qZ-qGXujE",
@@ -299,23 +275,6 @@
             messagingSenderId: "1079761104680",
             appId: "1:1079761104680:web:9b1383f330087dd581aa1d"
         };
-
-        try {
-            // 初始化Firebase
-            firebase.initializeApp(firebaseConfig);
-            setDebug('debugInit', '✅ Firebase初始化成功');
-            console.log('Firebase initialized successfully');
-        } catch (error) {
-            setDebug('debugInit', '❌ Firebase初始化失败: ' + error.message, false);
-            console.error('Firebase initialization error:', error);
-            alert('Firebase初始化失败：' + error.message);
-        }
-
-        const database = firebase.database();
-        const dataRef = database.ref('eyedropData');
-
-        // 本地数据缓存
-        let localData = null;
 
         const baseTasks = [
             { time: "08:00", medicine: "小牛血去蛋白提取物滴眼液" },
@@ -348,40 +307,55 @@
             { id: "master", name: "眼药水大师", unlocked: false }
         ];
 
-        // 从Firebase加载数据
-        function loadData(callback) {
-            setDebug('debugLoad', '🔄 正在加载数据...');
-            dataRef.once('value')
-                .then((snapshot) => {
-                    const data = snapshot.val();
-                    setDebug('debugLoad', '✅ 数据加载成功');
-                    console.log('Data loaded from Firebase:', data);
+        try {
+            firebase.initializeApp(firebaseConfig);
+            console.log('✅ Firebase initialized');
+        } catch (error) {
+            console.error('❌ Firebase initialization error:', error);
+            alert('Firebase初始化失败：' + error.message);
+        }
 
-                    if (data) {
-                        localData = data;
-                        setDebug('debugData', '✅ 数据已加载，共 ' + (data.tasks ? data.tasks.length : 0) + ' 个任务');
-                        if (callback) callback(data);
-                    } else {
-                        setDebug('debugData', '⚠️ 数据库为空，正在创建初始数据...');
-                        console.log('No data found, creating initial data');
-                        createInitialData();
-                    }
+        const database = firebase.database();
+        const dataRef = database.ref('eyedropData');
 
-                    // 隐藏加载，显示内容
-                    document.getElementById('loadingDiv').style.display = 'none';
-                    document.getElementById('contentDiv').style.display = 'block';
-                })
-                .catch((error) => {
-                    setDebug('debugLoad', '❌ 数据加载失败: ' + error.message, false);
-                    setDebug('debugData', '❌ 无法访问Firebase数据库', false);
-                    console.error('Error loading data:', error);
-                    alert('加载数据失败：' + error.message);
-                });
+        let localData = null;
+
+        // 更新同步状态
+        function updateSyncStatus(message) {
+            const statusEl = document.getElementById('syncStatus');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
+            console.log('Sync Status:', message);
+        }
+
+        // 检查数据结构是否完整
+        function validateData(data) {
+            if (!data) return false;
+
+            const requiredFields = ['tasks', 'stats', 'achievements', 'history', 'lastUpdate'];
+            for (const field of requiredFields) {
+                if (!data.hasOwnProperty(field)) {
+                    console.warn(`❌ 数据结构不完整，缺少字段: ${field}`);
+                    return false;
+                }
+            }
+
+            if (!Array.isArray(data.tasks)) {
+                console.warn('❌ tasks 不是数组');
+                return false;
+            }
+
+            if (!data.stats || typeof data.stats !== 'object') {
+                console.warn('❌ stats 不是对象');
+                return false;
+            }
+
+            return true;
         }
 
         // 创建初始数据
         function createInitialData() {
-            console.log('Creating initial data...');
             const today = getTodayDateString();
             const initialData = {
                 tasks: baseTasks.map((task, index) => ({
@@ -395,32 +369,80 @@
                 lastUpdate: new Date().toISOString(),
                 startDate: today
             };
-            saveData(initialData);
-            setDebug('debugData', '✅ 初始数据已创建');
-        }
-
-        // 保存数据到Firebase
-        function saveData(data) {
-            localData = data;
-            data.lastUpdate = new Date().toISOString();
-            dataRef.set(data)
-                .then(() => {
-                    setDebug('debugData', '✅ 数据已保存');
-                    console.log('Data saved successfully');
-                })
-                .catch((error) => {
-                    setDebug('debugData', '❌ 数据保存失败: ' + error.message, false);
-                    console.error('Error saving data:', error);
-                    alert('保存数据失败：' + error.message);
-                });
+            console.log('✅ 创建初始数据');
+            return initialData;
         }
 
         function getTodayDateString() {
             return new Date().toISOString().split('T')[0];
         }
 
+        // 从Firebase加载数据
+        function loadData(callback) {
+            updateSyncStatus('🔄 正在加载数据...');
+
+            dataRef.once('value')
+                .then((snapshot) => {
+                    const data = snapshot.val();
+
+                    if (data && validateData(data)) {
+                        console.log('✅ 数据加载成功，结构完整');
+                        updateSyncStatus('✅ 已连接云端，支持跨设备实时同步');
+                        localData = data;
+                        if (callback) callback(data);
+                    } else if (data) {
+                        // 数据存在但结构不完整，重新创建
+                        console.warn('⚠️ 数据结构不完整，正在重建...');
+                        updateSyncStatus('⚠️ 数据结构异常，正在修复...');
+                        const fixedData = createInitialData();
+                        saveData(fixedData);
+                        localData = fixedData;
+                        if (callback) callback(fixedData);
+                    } else {
+                        // 数据库为空
+                        console.log('⚠️ 数据库为空，创建初始数据');
+                        updateSyncStatus('⚠️ 首次使用，创建初始数据');
+                        const initialData = createInitialData();
+                        saveData(initialData);
+                        localData = initialData;
+                        if (callback) callback(initialData);
+                    }
+
+                    showContent();
+                })
+                .catch((error) => {
+                    console.error('❌ 数据加载失败:', error);
+                    updateSyncStatus('❌ 数据加载失败: ' + error.message);
+                    alert('加载数据失败：' + error.message);
+                });
+        }
+
+        // 保存数据到Firebase
+        function saveData(data) {
+            data.lastUpdate = new Date().toISOString();
+            dataRef.set(data)
+                .then(() => {
+                    console.log('✅ 数据保存成功');
+                })
+                .catch((error) => {
+                    console.error('❌ 数据保存失败:', error);
+                    alert('保存数据失败：' + error.message);
+                });
+        }
+
+        function showContent() {
+            document.getElementById('loadingDiv').style.display = 'none';
+            document.getElementById('contentDiv').style.display = 'block';
+        }
+
         function initTodayData(data) {
             const today = getTodayDateString();
+
+            // 确保history存在
+            if (!data.history || typeof data.history !== 'object') {
+                data.history = {};
+            }
+
             if (!data.history[today]) {
                 data.tasks = baseTasks.map((task, index) => ({
                     ...task, id: index + 1,
@@ -433,7 +455,7 @@
         }
 
         function updateStats(data) {
-            const dates = Object.keys(data.history).sort().reverse();
+            const dates = Object.keys(data.history || {}).sort().reverse();
             let totalDays = 0, consecutiveDays = 0, totalTasks = 0, completedTasks = 0;
 
             for (const date of dates) {
@@ -457,6 +479,8 @@
 
         function checkAchievements(data) {
             const today = getTodayDateString();
+            if (!data.history || !data.history[today]) return;
+
             if (data.history[today].completed > 0) unlockAchievement(data, 'first_checkin');
             if (data.stats.consecutiveDays >= 3) unlockAchievement(data, 'three_days');
             if (data.stats.consecutiveDays >= 7) unlockAchievement(data, 'seven_days');
@@ -469,20 +493,21 @@
         }
 
         function unlockAchievement(data, achievementId) {
+            if (!data.achievements) data.achievements = [];
             const achievement = data.achievements.find(a => a.id === achievementId);
             if (achievement && !achievement.unlocked) achievement.unlocked = true;
         }
 
         function renderStats(data) {
-            document.getElementById('totalDays').textContent = data.stats.totalDays;
-            document.getElementById('consecutiveDays').textContent = data.stats.consecutiveDays;
-            document.getElementById('completionRate').textContent = data.stats.completionRate + '%';
+            document.getElementById('totalDays').textContent = data.stats.totalDays || 0;
+            document.getElementById('consecutiveDays').textContent = data.stats.consecutiveDays || 0;
+            document.getElementById('completionRate').textContent = (data.stats.completionRate || 0) + '%';
         }
 
         function renderAchievements(data) {
             const achievementList = document.getElementById('achievementList');
             achievementList.innerHTML = '';
-            data.achievements.forEach(achievement => {
+            (data.achievements || []).forEach(achievement => {
                 const div = document.createElement('div');
                 div.className = `achievement ${achievement.unlocked ? 'unlocked' : 'locked'}`;
                 div.textContent = achievement.unlocked ? `✅ ${achievement.name}` : `🔒 ${achievement.name}`;
@@ -509,7 +534,7 @@
                 const now = new Date();
                 const currentTimeStr = now.toTimeString().slice(0, 5);
 
-                data.tasks.forEach((task, index) => {
+                (data.tasks || []).forEach((task, index) => {
                     if (task.completed) completedCount++;
 
                     const taskEl = document.createElement('div');
@@ -544,14 +569,17 @@
 
                 const progressBar = document.getElementById('progressBar');
                 const progressText = document.getElementById('progressText');
-                const progress = (completedCount / data.tasks.length) * 100;
+                const totalTasks = data.tasks ? data.tasks.length : 0;
+                const progress = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
                 progressBar.style.width = progress + '%';
-                progressText.textContent = `${completedCount}/${data.tasks.length} 完成`;
+                progressText.textContent = `${completedCount}/${totalTasks} 完成`;
 
                 const today = getTodayDateString();
-                if (completedCount === data.tasks.length) data.history[today].status = 'completed';
-                else if (completedCount > 0) data.history[today].status = 'partial';
-                data.history[today].completed = completedCount;
+                if (data.history && data.history[today]) {
+                    if (completedCount === totalTasks) data.history[today].status = 'completed';
+                    else if (completedCount > 0) data.history[today].status = 'partial';
+                    data.history[today].completed = completedCount;
+                }
                 saveData(data);
 
                 renderStats(data);
@@ -567,7 +595,7 @@
             const historyList = document.getElementById('historyList');
             historyList.innerHTML = '';
 
-            const dates = Object.keys(data.history).sort().reverse();
+            const dates = Object.keys(data.history || {}).sort().reverse();
             dates.forEach(date => {
                 const dayData = data.history[date];
                 const div = document.createElement('div');
@@ -594,11 +622,13 @@
 
         function checkIn(index) {
             loadData(function(data) {
-                data.tasks[index].completed = true;
-                data.tasks[index].completedAt = new Date().toISOString();
-                saveData(data);
-                renderTasks();
-                alert('打卡成功！💪');
+                if (data.tasks && data.tasks[index]) {
+                    data.tasks[index].completed = true;
+                    data.tasks[index].completedAt = new Date().toISOString();
+                    saveData(data);
+                    renderTasks();
+                    alert('打卡成功！💪');
+                }
             });
         }
 
@@ -609,25 +639,22 @@
 
         function delay(index, minutes) {
             loadData(function(data) {
-                // 如果第一次延迟，设置标志
+                if (!data.tasks || !data.tasks[index]) return;
+
                 if (!data.tasks[index].delayed) {
                     data.tasks[index].delayed = true;
                     data.tasks[index].delayMinutes = minutes;
                 } else {
-                    // 多次延迟，累加延迟时间
                     data.tasks[index].delayMinutes += minutes;
                 }
 
-                // 计算新的延迟时间（累加方式）
                 const baseTime = new Date(`2026-04-15T${data.tasks[index].time}:00`);
                 baseTime.setMinutes(baseTime.getMinutes() + data.tasks[index].delayMinutes);
                 data.tasks[index].newTime = baseTime.toTimeString().slice(0, 5);
 
-                // 顺延后续所有未完成的任务
-                for (let i = index + 1; i < data.tasks.length; i++) {
+                for (let i = index + 1; i < (data.tasks || []).length; i++) {
                     if (!data.tasks[i].completed) {
                         const taskBaseTime = new Date(`2026-04-15T${data.tasks[i].time}:00`);
-                        // 后续任务也延迟相同的累计时间
                         taskBaseTime.setMinutes(taskBaseTime.getMinutes() + data.tasks[index].delayMinutes);
                         data.tasks[i].newTime = taskBaseTime.toTimeString().slice(0, 5);
                         data.tasks[i].delayed = true;
@@ -641,21 +668,14 @@
             });
         }
 
-        function showDebug() {
-            const debugInfo = document.getElementById('debugInfo');
-            if (debugInfo) {
-                debugInfo.classList.add('show');
-            }
-        }
-
         showCurrentDate();
         renderTasks();
 
         // 实时监听数据变化
         dataRef.on('value', (snapshot) => {
             const data = snapshot.val();
-            if (data && JSON.stringify(data) !== JSON.stringify(localData)) {
-                console.log('Data changed, re-rendering...');
+            if (data && validateData(data) && JSON.stringify(data) !== JSON.stringify(localData)) {
+                console.log('🔄 数据变化，重新渲染...');
                 localData = data;
                 renderTasks();
             }
